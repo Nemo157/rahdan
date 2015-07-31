@@ -1,0 +1,19 @@
+{
+  "name": "rahdan",
+  "version": "1.0.0",
+  "description": "A client side routing library inspired by Sammy.js",
+  "main": "src/rahdan.ts",
+  "scripts": {
+    "test": "npm run tsc",
+    "tsc": "tsc"
+  },
+  "author": "Nemo157 (Wim Looman) <wim@nemo157.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nemo157/rahdan"
+  },
+  "devDependencies": {
+    "typescript": "^1.5.3"
+  }
+}

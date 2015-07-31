@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "noImplicitAny": true,
+    "target": "es6",
+    "sourceMap": true,
+    "outDir": "dist",
+    "declaration": true
+  },
+  "files": [
+    "src/rahdan.ts"
+  ]
+}

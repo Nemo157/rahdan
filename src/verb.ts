@@ -1,0 +1,8 @@
+export enum Verb {
+  none = 0x00,
+  get = 0x01,
+  put = 0x02,
+  post = 0x04,
+  del = 0x08,
+  any = 0xff,
+}
