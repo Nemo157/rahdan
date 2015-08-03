@@ -1,8 +1,9 @@
 import { Verb } from './verb'
 import { Params, EventContext } from './event_context'
 import { EventContextImpl } from './event_context_impl'
+import sequence from './sequence'
 
-export type Done = PromiseLike<void> | void
+export type Done = PromiseLike<any> | any
 
 export class Around {
   private nominal = true
@@ -45,6 +46,11 @@ export class After {
   constructor(public callback: (context: EventContext) => Done) { }
 }
 
+export class ErrorHandler {
+  private nominal = true
+  constructor(public callback: (context: EventContext, error: any) => Done) { }
+}
+
 export class ApplicationImpl {
   private _running: boolean = false
   private _onClick: (event: Event) => void
@@ -55,7 +61,8 @@ export class ApplicationImpl {
     private _arounds: Around[],
     private _befores: Before[],
     private _routes: Route[],
-    private _afters: After[]) {
+    private _afters: After[],
+    private _errors: ErrorHandler[]) {
 
     this._onClick = this.onClick.bind(this)
     this._onPopState = this.onPopState.bind(this)
@@ -108,7 +115,20 @@ export class ApplicationImpl {
     var route = this._routes.find(route => route.matches(verb, location.pathname))
     if (route) {
       var params = route.extractParams(location.pathname)
-      route.callback(new EventContextImpl(verb, location.host, location.pathname, params))
+      var context = new EventContextImpl(verb, location.host, location.pathname, params)
+      var last = () => sequence(
+        [].concat(
+          this._befores,
+          [route],
+          this._afters)
+        .map(a => () => Promise.resolve(a.callback(context))))
+      this._arounds
+        .reverse()
+        .forEach(a => {
+          var next = last
+          last = () => Promise.resolve(a.callback(context, next))
+        })
+      return last().catch(error => sequence(this._errors.map(e => () => Promise.resolve(e.callback(context, error)))))
     }
   }
 }
