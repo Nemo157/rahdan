@@ -1,17 +1,16 @@
 import { Verb } from './verb'
 import { Application } from './application'
 import { EventContext } from './event_context'
-import { Around, Before, Route, After, ErrorHandler, ApplicationImpl } from './application_impl'
+import { Around, ApplicationImpl } from './application_impl'
+import { Route } from './route'
 
 export class Builder {
   private _arounds: Around[] = []
-  private _befores: Before[] = []
   private _routes: Route[] = []
-  private _afters: After[] = []
-  private _errors: ErrorHandler[] = []
+  private _promise: PromiseConstructor = Promise
 
   public build(): Application {
-    return new ApplicationImpl(this._arounds, this._befores, this._routes, this._afters, this._errors)
+    return new ApplicationImpl(this._promise, this._arounds, this._routes)
   }
 
   public run() {
@@ -20,6 +19,11 @@ export class Builder {
 
   public use<T>(plugin: (builder: Builder, config: T) => any, config: T) {
     plugin(this, config)
+    return this
+  }
+
+  public usePromises(promise: PromiseConstructor) {
+    this._promise = promise
     return this
   }
 
@@ -48,33 +52,14 @@ export class Builder {
     return this.route(Verb.del, path, callback)
   }
 
-  public around(callback: (context: EventContext, route: () => PromiseLike<void>) => any): Builder
-  public around(callback: (context: EventContext, route: () => PromiseLike<void>) => PromiseLike<any>): Builder {
-    this._arounds.push(new Around(callback))
-    return this
-  }
-
-  public before(callback: (context: EventContext) => any): Builder
-  public before(callback: (context: EventContext) => PromiseLike<any>): Builder {
-    this._befores.push(new Before(callback))
+  public around(callback: (context: EventContext, route: () => Promise<void>) => PromiseLike<any>): Builder {
+    this._arounds.push(callback)
     return this
   }
 
   public route(verb: Verb, path: string, callback: (context: EventContext) => any): Builder
   public route(verb: Verb, path: string, callback: (context: EventContext) => PromiseLike<any>): Builder {
     this._routes.push(new Route(verb, path, callback))
-    return this
-  }
-
-  public after(callback: (context: EventContext) => any): Builder
-  public after(callback: (context: EventContext) => PromiseLike<any>): Builder {
-    this._afters.push(new After(callback))
-    return this
-  }
-
-  public error(callback: (context: EventContext, error: any) => any): Builder
-  public error(callback: (context: EventContext, error: any) => PromiseLike<any>): Builder {
-    this._errors.push(new ErrorHandler(callback))
     return this
   }
 }

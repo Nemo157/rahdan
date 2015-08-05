@@ -9,4 +9,6 @@ export interface EventContext {
   base: string
   path: string
   params: Params
+  title: string
+  historical: boolean
 }

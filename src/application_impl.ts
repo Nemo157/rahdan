@@ -1,54 +1,15 @@
 import { Verb } from './verb'
 import { Params, EventContext } from './event_context'
 import { EventContextImpl } from './event_context_impl'
+import { Route } from './route'
 import sequence from './sequence'
 
-export type Done = PromiseLike<any> | any
+export type Around = (context: EventContext, route: () => Promise<void>) => PromiseLike<any>
 
-export class Around {
-  private nominal = true
-  constructor(public callback: (context: EventContext, route: () => PromiseLike<void>) => Done) { }
-}
-
-export class Before {
-  private nominal = true
-  constructor(public callback: (context: EventContext) => Done) { }
-}
-
-export class Route {
-  private nominal = true
-
-  public pathRegex: RegExp
-  public paramNames: string[]
-
-  constructor(public verb: Verb, public path: string, public callback: (context: EventContext) => Done) {
-    this.paramNames = []
-    this.pathRegex = new RegExp(path.replace(/:[\w\d]+/g, match => (this.paramNames.push(match.substring(1)), '([^\/]+)')) + '$')
-  }
-
-  public matches(verb: Verb, path: string) {
-    return ((this.verb & verb) !== Verb.none) && (!!this.pathRegex.test(path))
-  }
-
-  public extractParams(path: string) {
-    var params: { [key: string]: string } = {}
-    var paramValues = this.pathRegex.exec(path)
-    paramValues.shift()
-    for (var i = 0; i < paramValues.length; i++) {
-      params[this.paramNames[i]] = paramValues[i]
-    }
-    return params
-  }
-}
-
-export class After {
-  private nominal = true
-  constructor(public callback: (context: EventContext) => Done) { }
-}
-
-export class ErrorHandler {
-  private nominal = true
-  constructor(public callback: (context: EventContext, error: any) => Done) { }
+interface URLUtils {
+  host: string
+  href: string
+  pathname: string
 }
 
 export class ApplicationImpl {
@@ -57,13 +18,7 @@ export class ApplicationImpl {
   private _onPopState: (event: Event) => void
   private _lastLocation: { verb: Verb, location: string }
 
-  constructor(
-    private _arounds: Around[],
-    private _befores: Before[],
-    private _routes: Route[],
-    private _afters: After[],
-    private _errors: ErrorHandler[]) {
-
+  constructor(private _promise: PromiseConstructor, private _arounds: Around[], private _routes: Route[]) {
     this._onClick = this.onClick.bind(this)
     this._onPopState = this.onPopState.bind(this)
   }
@@ -71,14 +26,14 @@ export class ApplicationImpl {
   public get running() { return this._running }
 
   public reload() {
-    this.runRoute(Verb.get, location);
+    this.runRoute(Verb.get, location, false);
   }
 
   public run() {
     this._running = true
     document.addEventListener('click', this._onClick)
     window.addEventListener('popstate', this._onPopState)
-    this.locationChanged()
+    this.locationChanged(location, false);
     return this
   }
 
@@ -89,8 +44,8 @@ export class ApplicationImpl {
     return this
   }
 
-  private onPopState(event: Event) {
-    this.locationChanged()
+  private onPopState(event: PopStateEvent) {
+    this.locationChanged(location, true)
   }
 
   private onClick(event: Event) {
@@ -99,36 +54,31 @@ export class ApplicationImpl {
       if (location.hostname === target.hostname) {
         event.preventDefault()
         history.pushState({}, '', target.href)
-        this.locationChanged()
+        this.locationChanged(target, false)
       }
     }
   }
 
-  private locationChanged() {
-    if (!this._lastLocation || this._lastLocation.verb != Verb.get || this._lastLocation.location != location.href) {
-      this._lastLocation = { verb: Verb.get, location: location.href }
-      this.runRoute(Verb.get, location);
+  private locationChanged(target: URLUtils, historical: boolean) {
+    if (!this._lastLocation || this._lastLocation.verb != Verb.get || this._lastLocation.location != target.href) {
+      this._lastLocation = { verb: Verb.get, location: target.href }
+      return this.runRoute(Verb.get, target, historical);
+    } else {
+      return this._promise.resolve<EventContext>(undefined);
     }
   }
 
-  private runRoute(verb: Verb, location: Location) {
+  private runRoute(verb: Verb, location: URLUtils, historical: boolean) {
     var route = this._routes.find(route => route.matches(verb, location.pathname))
     if (route) {
       var params = route.extractParams(location.pathname)
-      var context = new EventContextImpl(verb, location.host, location.pathname, params)
-      var last = () => sequence(
-        [].concat(
-          this._befores,
-          [route],
-          this._afters)
-        .map(a => () => Promise.resolve(a.callback(context))))
-      this._arounds
-        .reverse()
-        .forEach(a => {
-          var next = last
-          last = () => Promise.resolve(a.callback(context, next))
-        })
-      return last().catch(error => sequence(this._errors.map(e => () => Promise.resolve(e.callback(context, error)))))
+      var context = new EventContextImpl(verb, location.host, location.pathname, params, historical)
+
+      var fullRoute = this._arounds.reduceRight<() => Promise<void>>(
+          (next, around) => () => this._promise.resolve(around(context, next)),
+          () => this._promise.resolve(route.callback(context)))
+
+      return fullRoute().then(() => context)
     }
   }
 }
